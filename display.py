@@ -32,6 +32,7 @@ CMD_SET_CH_FONT = 0x1F # set chinese font
 CMD_DRAW_PIXEL = 0x20 # set pixel
 CMD_DRAW_LINE = 0x22 # draw line
 CMD_FILL_RECT = 0x24 # fill rectangle
+CMD_DRAW_RECT = 0x25 # fill rectangle
 CMD_DRAW_CIRCLE = 0x26 # draw circle
 CMD_FILL_CIRCLE = 0x27 # fill circle
 CMD_DRAW_TRIANGLE = 0x28 # draw triangle
@@ -54,8 +55,9 @@ MEM_NAND = 0
 MEM_TF = 1
 
 # set screen rotation
-EPD_NORMAL = 0 # screen normal
-EPD_INVERSION = 1 # screen inversion
+ROT_NORMAL = 0 # screen normal
+ROT_90 = 1 # screen inversion
+ROT_180 = 2 # screen inversion
 
 class Display:
     def __init__(self, tx, rx, wake_up, reset, uart_num=1):
@@ -64,6 +66,7 @@ class Display:
         self.uart = UART(1, baudrate=115200, tx=tx, rx=rx)
         self.wpin.value(1)
         self.rpin.value(1)
+        self.is_sleeping = False
 
     def _verify(self, buf):
         r = 0
@@ -78,7 +81,8 @@ class Display:
         self.rpin.value(1)
         time.sleep(0.001)
         self.rpin.value(0)
-        time.sleep(2)
+        time.sleep(0.1)
+        self.is_sleeping = False
 
     def wake(self):
         self.wpin.value(0)
@@ -87,11 +91,16 @@ class Display:
         time.sleep(0.001)
         self.wpin.value(0)
         time.sleep(0.01)
+        self.is_sleeping = False
 
     def sleep(self):
         self.send_command(CMD_STOPMODE)
+        self.is_sleeping = True
 
     def _send_cmd(self, command):
+        if self.is_sleeping:
+            self.wake()
+        
         command = command + bytes([self._verify(command)])
         self.uart.write(command)
 
@@ -156,6 +165,10 @@ class Display:
         self._send_numeric_command(CMD_DRAW_LINE,
                                    [x0, y0, x1, y1])
 
+    def draw_rect(self, x0, y0, x1, y1):
+        self._send_numeric_command(CMD_DRAW_RECT,
+                                   [x0, y0, x1, y1])
+
     def fill_rect(self, x0, y0, x1, y1):
         self._send_numeric_command(CMD_FILL_RECT,
                                    [x0, y0, x1, y1])
@@ -195,11 +208,15 @@ class Display:
 """
 from machine import Pin
 from display import Display
-disp = Display(tx=12, rx=13, wake_up=Pin(14), reset=Pin(15))
+disp = Display(tx=12, rx=13, wake_up=Pin(14, Pin.OUT), reset=Pin(15, Pin.OUT))
 # disp.reset()
 disp.wake()
 disp.clear()
 disp.update()
+disp.set_rotation(1)
+
+disp.set_memory(1)
+disp.draw_bitmap('zcash.bmp', 0, 0)
 
 epd_init()
 epd_wakeup()
