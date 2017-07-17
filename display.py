@@ -57,26 +57,13 @@ MEM_TF = 1
 EPD_NORMAL = 0 # screen normal
 EPD_INVERSION = 1 # screen inversion
 
-
-WAKE_UP = 2
-RESET = 3
-
-COMMANDS = {
-    "handshake": [0xA5, 0x00, 0x09, CMD_HANDSHAKE, 0xCC, 0x33, 0xC3, 0x3C],
-    "read_baud": [0xA5, 0x00, 0x09, CMD_READ_BAUD, 0xCC, 0x33, 0xC3, 0x3C],
-    "stopmode": [0xA5, 0x00, 0x09, CMD_STOPMODE, 0xCC, 0x33, 0xC3, 0x3C],
-    "update": [0xA5, 0x00, 0x09, CMD_UPDATE, 0xCC, 0x33, 0xC3, 0x3C],
-    "load_font": [0xA5, 0x00, 0x09, CMD_LOAD_FONT, 0xCC, 0x33, 0xC3, 0x3C],
-    "load_pic": [0xA5, 0x00, 0x09, CMD_LOAD_PIC, 0xCC, 0x33, 0xC3, 0x3C]
-}
-
 class Display:
     def __init__(self, tx, rx, wake_up, reset, uart_num=1):
         self.wpin = wake_up
         self.rpin = reset
-        self.uart = machine.UART(1, baudrate=115200, tx=tx, rx=rx)
-        self.wpin.set(1)
-        self.rpin.set(1)
+        self.uart = UART(1, baudrate=115200, tx=tx, rx=rx)
+        self.wpin.value(1)
+        self.rpin.value(1)
 
     def _verify(self, buf):
         r = 0
@@ -101,11 +88,14 @@ class Display:
         self.wpin.value(0)
         time.sleep(0.01)
 
-    def _send_cmd(command):
-        command = command + self._verify(command)
+    def sleep(self):
+        self.send_command(CMD_STOPMODE)
+
+    def _send_cmd(self, command):
+        command = command + bytes([self._verify(command)])
         self.uart.write(command)
 
-    def _prepare_command(command, data=None):
+    def _prepare_command(self, command, data=None):
         msg_body = bytes([command])
         if data is not None:
             msg_body += data
@@ -115,9 +105,104 @@ class Display:
                     (msg_len >> 8) & 0xFF,
                     msg_len & 0xFF])
 
+        msg += msg_body
+        msg += bytes([FRAME_E0, FRAME_E1, FRAME_E2, FRAME_E3])
+        return msg
 
-    def update():
+    def send_command(self, command, data=None):
+        self._send_cmd(
+            self._prepare_command(command, data=data))
 
-epd_init();
-epd_wakeup();
-epd_set_memory(MEM_NAND);
+    def set_memory(self, memory_mode):
+        self.send_command(CMD_MEMORYMODE,
+                          data=bytes([memory_mode]))
+
+    def set_rotation(self, rotation_mode):
+        self.send_command(CMD_SCREEN_ROTATION,
+                          data=bytes([rotation_mode]))
+
+    def set_color(self, color, bg_color=WHITE):
+        self.send_command(CMD_SET_COLOR,
+                          data=bytes([color, bg_color]))
+
+    def set_en_font(self, font):
+        self.send_command(CMD_SET_EN_FONT,
+                          data=bytes([font]))
+
+    def set_ch_font(self, font):
+        self.send_command(CMD_SET_CH_FONT,
+                          data=bytes([font]))
+
+    def clear(self):
+        self.send_command(CMD_CLEAR)
+
+    def update(self):
+        self.send_command(CMD_UPDATE)
+
+    def load_pic(self):
+        self.send_command(CMD_LOAD_PIC)
+
+    def _send_numeric_command(self, command, values):
+        buf = bytes()
+        for v in values:
+            buf += bytes([(v >> 8) & 0xFF,
+                          v & 0xFF])
+        self.send_command(command, data=buf)
+
+    def draw_pixel(self, x, y):
+        self._send_numeric_command(CMD_DRAW_PIXEL, [x, y])
+
+    def draw_line(self, x0, y0, x1, y1):
+        self._send_numeric_command(CMD_DRAW_LINE,
+                                   [x0, y0, x1, y1])
+
+    def fill_rect(self, x0, y0, x1, y1):
+        self._send_numeric_command(CMD_FILL_RECT,
+                                   [x0, y0, x1, y1])
+
+    def draw_circle(self, x0, y0, r):
+        self._send_numeric_command(CMD_DRAW_CIRCLE,
+                                   [x0, y0, r])
+
+    def fill_circle(self, x0, y0, r):
+        self._send_numeric_command(CMD_FILL_CIRCLE,
+                                   [x0, y0, r])
+
+    def draw_triangle(self, x0, y0, x1, y1, x2, y2):
+        self._send_numeric_command(CMD_DRAW_TRIANGLE,
+                                   [x0, y0, x1, y1, x2, y2])
+
+    def fill_triangle(self, x0, y0, x1, y1, x2, y2):
+        self._send_numeric_command(CMD_FILL_TRIANGLE,
+                                   [x0, y0, x1, y1, x2, y2])
+
+    def text(self, text, x, y):
+        buf = bytes([(x >> 8) & 0xFF,
+                     x & 0xFF,
+                     (y >> 8) & 0xFF,
+                     y & 0xFF])
+        buf += text.encode('ISO-8859-1')
+        self.send_command(CMD_DRAW_STRING, data=buf)
+
+    def draw_bitmap(self, filename, x, y):
+        buf = bytes([(x >> 8) & 0xFF,
+                     x & 0xFF,
+                     (y >> 8) & 0xFF,
+                     y & 0xFF])
+        buf += filename.encode('ISO-8859-1')
+        self.send_command(CMD_DRAW_BITMAP, data=buf)
+        
+"""
+from machine import Pin
+from display import Display
+disp = Display(tx=12, rx=13, wake_up=Pin(14), reset=Pin(15))
+# disp.reset()
+disp.wake()
+disp.clear()
+disp.update()
+
+epd_init()
+epd_wakeup()
+epd_set_memory(MEM_NAND)
+
+"""
